@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict, Any, List
-
 from adk.engine import AgentState
 from agents.discovery_agent import discovery_agent
 from agents.negotiator_agent import negotiator_agent
