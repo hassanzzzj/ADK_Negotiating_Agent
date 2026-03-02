@@ -5,8 +5,11 @@ from mcp_servers.inventory_server import check_stock, reserve_inventory
 
 def handoff_to_order(product_id: str, agreed_price: float, reserved_qty: int) -> str:
     """
-    Transfers the conversation to the Order Taking Agent after stock has been
-    successfully reserved. Pass the product_id, agreed_price and reserved_qty.
+    Transfers the conversation to the Order Taking Agent.
+    Args:
+        product_id: The ID of the product.
+        agreed_price: The price as a numeric value (e.g. 250000.0). Do not pass as string.
+        reserved_qty: Number of items reserved (integer).
     """
     return json.dumps({
         "handoff_to": "OrderTaking",
@@ -36,6 +39,7 @@ RULES:
    Briefly reassure the customer: "Great news — your item is reserved. Moving you to checkout now!"
 5. If out of stock, sincerely apologise and call end_transaction.
    Suggestion: "I'm sorry — that item just went out of stock. Would you like to explore an alternative?"
+6. IMPORTANT:" When calling 'handoff_to_order', the 'agreed_price' MUST be a number (e.g., 250000), NOT a string (e.g., "250000"). Do not use quotation marks for numerical values."
 
 Keep your messages brief. You are a background process — the customer should barely notice the transition.
 """

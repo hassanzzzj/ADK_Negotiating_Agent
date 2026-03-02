@@ -8,6 +8,7 @@ def handoff_to_negotiator(product_id: str, product_name: str, asking_price: floa
     objects to the price or asks for a discount/better deal.
     Provide the product_id, product_name, and the current asking_price so the
     Negotiator knows exactly what is being discussed.
+    IMPORTANT: 'asking_price' MUST be a number, NOT a string.
     """
     return json.dumps({
         "handoff_to": "Negotiator",
@@ -20,8 +21,9 @@ def handoff_to_negotiator(product_id: str, product_name: str, asking_price: floa
 def handoff_to_order(product_id: str, agreed_price: float, reason: str) -> str:
     """
     Transfers the conversation to the Order Taking agent when the customer
-    explicitly agrees to purchase at the quoted price without negotiation.
-    Only call this after getting an unambiguous 'Yes, I want to buy' at the stated price.
+    explicitly agrees to purchase. 
+    IMPORTANT: The 'agreed_price' MUST be passed as a raw number (e.g., 250000), 
+    NOT as a string (e.g., "250000"). Do not use quotation marks for numerical values.
     """
     return json.dumps({
         "handoff_to": "OrderTaking",
@@ -88,6 +90,15 @@ HANDOFF RULES:
 - ONLY call handoff_to_order if the customer gives an unambiguous "Yes, I want to buy it at
   [that price]" with NO price objection whatsoever.
 - NEVER negotiate yourself. Price objections are the Negotiator's domain.
+
+══════════════════════════════════
+  TECHNICAL DATA TYPE RULES (STRICT)
+══════════════════════════════════
+- When calling any tool (especially handoff_to_order or handoff_to_negotiator):
+- Numerical values like 'agreed_price' or 'asking_price' MUST be sent as numbers.
+- WRONG: "agreed_price": "250000"
+- RIGHT: "agreed_price": 250000
+- Do NOT use quotation marks for prices or quantities.
 
 TONE: Confident, warm, professional. You love technology and it shows.
 """

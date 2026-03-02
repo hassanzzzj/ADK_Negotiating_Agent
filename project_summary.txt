@@ -1,0 +1,150 @@
+# ADK Negotiation Agent - Technical Overview
+
+This document provides a comprehensive technical summary of the project, describing the architecture, major components, tools used, and how they interact. It can serve as the basis for a presentation or deeper documentation.
+
+---
+
+## 1. Project Purpose
+
+An autonomous multi-agent retail store chatbot that allows customers to:
+- Discover products
+- Negotiate prices with an AI negotiator
+- Check inventory
+- Complete orders with payment and shipping
+
+The system simulates backend services (catalog, CRM, inventory, payment) and orchestrates them using an `Agent` framework powered by large language models.
+
+---
+
+## 2. High-Level Architecture
+
+```
+Frontend (static HTML/JS)  <-->  FastAPI + WebSocket backend  <-->  Agent Engine + LiteLLM
+                                         ^                            |
+                                         |                            v
+                          Mock microservice servers (FastMCP) --> Tools called by agents
+```
+
+- **Frontend**: Static files in `/static` provide UI, chat widget, product catalog, and real-time updates via WebSocket.
+- **Backend**: `app.py` instantiates FastAPI, mounts static files, handles HTTP endpoints and a WebSocket `/ws/chat/{session_id}` for conversational sessions.
+- **Agent Engine** (`adk/engine.py`): Defines `Agent` and `AgentState`. Agents execute by calling the LLM through wrappers in `config.py`. Supports synchronous CLI workflow (`workflow.py`) and asynchronous WebSocket streaming logic.
+- **LiteLLM**: Abstraction over LLM provider (Groq, but configurable). Used via `litellm` package. Completion and acompletion wrappers are defined in `config.py`.
+- **MCP Servers**: Four mock services built with FastMCP (`mcp/server/fastmcp`) located in `mcp_servers/` folder. They expose tools (annotated with `@mcp.tool()` functions) to agents via `adk.mcp_client.ToolExecutor`.
+
+---
+
+## 3. Core Components
+
+### 3.1 Agents
+
+There are four specialized agents implemented as `Agent` objects with:
+- `name`: persona identifier
+- `instructions`: long multi-line prompt guiding behaviour
+- `tools`: list of functions available via the MCP servers and internal helper functions
+
+Agents and responsibilities:
+1. **Discovery Agent** (`agents/discovery_agent.py`)
+   - Greets users, searches catalog, presents products, triggers handoff to negotiator or order.
+   - Tools: `search_catalog`, `get_product_details`, `list_available_products`, plus two helpers for handoffs.
+   - Detailed behavioural rules enforce anti-hallucination and pricing logic.
+
+2. **Negotiator Agent** (`agents/negotiator_agent.py`)
+   - Handles price objections, consults CRM, pricing intelligence, and applies negotiation framework (anchoring, concessions).
+   - Tools: `get_customer_profile`, `get_product_pricing_intel`, `log_negotiation_outcome`, plus handoff helpers and end negotiation.
+
+3. **Inventory Agent** (`agents/inventory_agent.py`)
+   - Checks and reserves stock after price agreement; moves conversation to order.
+   - Tools: `check_stock`, `reserve_inventory`, plus handoff helper and end transaction.
+
+4. **OrderTaking Agent** (`agents/order_agent.py`)
+   - Collects shipping address, processes payment, generates invoice, deducts stock.
+   - Tools: `validate_shipping_address`, `process_payment`, `generate_invoice`, `deduct_stock`, plus final confirmation helper.
+
+### 3.2 Agent Engine
+
+- Receives current `AgentState` (history, context, active agent).
+- Prepares system prompt including instructions and shared context.
+- Uses `get_llm_completion`/`acompletion` to call the LLM and parse responses.
+- Handles tool calls returned by the LLM: executes via `ToolExecutor`, appends tool responses, checks for handoff instructions encoded in JSON results.
+- Emits events for frontend streaming and state sync.
+- CLI workflow (`workflow.py`) demonstrates sequential synchronous operation for debugging/test.
+
+### 3.3 MCP Client & Servers
+
+- **`adk/mcp_client.py`**: Converts Python functions into tool schemas for LiteLLM and executes them when called.
+- **MCP Servers**: Each server is a lightweight FastMCP microservice exposing tools used by agents.
+  - `catalog_server`: product database, search, details, pricing intelligence, stock deduction
+  - `crm_server`: customer profiles and negotiation logging
+  - `inventory_server`: stock checking and reservation
+  - `payment_server`: shipping validation, payment processing, invoice generation
+
+The servers can be run independently (each has `if __name__ == "__main__": mcp.run()`), simulating real-world backend APIs.
+
+### 3.4 Frontend & Real-Time Communication
+
+- Static assets include HTML, CSS, and JS files (`static/` folder) implementing the UI.
+- JavaScript connects to the WebSocket, sends user messages, displays streaming responses and tool events, updates cart and checkout state.
+- `ConnectionManager` in `app.py` tracks active WebSocket sessions and pushes events to clients.
+
+---
+
+## 4. Tools and Technologies
+
+| Category | Tools / Libraries | Usage |
+|---------|-------------------|-------|
+| Web Framework | FastAPI, Uvicorn | API endpoints, WebSocket server |
+| LLM Integration | litellm (groq/LLama), dotenv | LLM calls, configuration, model switching |
+| Data Models | Pydantic | `AgentState` definition |
+| Async Utilities | `asyncio` | Asynchronous agent execution and event emission |
+| Microservices | FastMCP (mcp.server.fastmcp) | Mock backend servers / tools |
+| Frontend | HTML/JS/CSS | Chat UI, real-time updates, static file hosting |
+| Environment Management | `.env`, python-dotenv | Loading API keys and config |
+| Deployment | Docker, docker-compose | Containerization and orchestration |
+| Testing / Utilities | `test_models.py` | Model availability check via Google Gemini API |
+
+---
+
+## 5. Deployment & Configuration
+
+- Environment variable `GROQ_API_KEY` for LLM access.
+- Dockerfile and docker-compose provide containerized build/run.
+- `requirements.txt` lists Python dependencies (FastAPI, litellm, pydantic, uvicorn, python-dotenv etc.).
+
+---
+
+## 6. Data Flow Example (User Session)
+
+1. User connects via WebSocket with a `session_id`.
+2. Session initialized with `AgentState` starting at Discovery agent.
+3. User sends message "I'm interested in a gaming laptop."
+4. Discovery agent calls `search_catalog` tool, receives JSON list, responds to user with product info and price anchor.
+5. User expresses price objection -> Discovery returns `handoff_to_negotiator` JSON.
+6. Negotiator agent loads CRM profile and pricing intel, engages negotiation rules, may call `log_negotiation_outcome` and hand off to Inventory with agreed price.
+7. Inventory agent checks/reserves stock and hands off to OrderTaking with reservation details.
+8. Order agent collects shipping/payment, calls `process_payment`, `deduct_stock`, and `generate_invoice`, returning final confirmation.
+9. WebSocket events stream messages and tool call outputs to frontend; session resets after completion.
+
+---
+
+## 7. Presentation Tips
+
+- Start with problem statement: simulate autonomous retail negotiation.
+- Illustrate architecture with a diagram showing frontend-backend-agents-tools.
+- Walk through the four agents and show prompt engineering strategies in instructions.
+- Highlight LLM integration via LiteLLM and tool calling pattern.
+- Show examples of tools (like search_catalog) and the corresponding Python or JSON results.
+- Mention extensibility: swap models, add new agents/tools, run servers separately.
+- Demonstrate running via CLI (`workflow.py`) and via Web UI.
+- Discuss deployment options (local Python run, Docker).
+
+---
+
+## 8. Additional Notes
+
+- The code emphasizes strict non-hallucination policies and demonstration of AI safety via explicit agent instructions.
+- The multi-agent design allows separation of concerns and stepwise escalation, making it easier to test and modify behaviour.
+- The MCP servers mimic microservice architecture while keeping everything in one repo.
+
+---
+
+This file can be used as reference to construct slides, diagrams, and talking points for a technical presentation.
